@@ -563,70 +563,42 @@ func (mc *ModbusClient) ReadRawBytes(addr uint16, quantity uint16, regType RegTy
 
 // Writes a single coil (function code 05)
 func (mc *ModbusClient) WriteCoil(addr uint16, value bool) (err error) {
-	var req		*pdu
-	var res		*pdu
+	var payload uint16
 
 	mc.lock.Lock()
 	defer mc.lock.Unlock()
 
-	// create and fill in the request object
-	req	= &pdu{
-		unitId:	      mc.unitId,
-		functionCode: fcWriteSingleCoil,
-	}
-
-	// coil address
-	req.payload	= uint16ToBytes(BIG_ENDIAN, addr)
-	// coil value
 	if value {
-		req.payload	= append(req.payload, 0xff, 0x00)
+		payload = 0xff00
 	} else {
-		req.payload	= append(req.payload, 0x00, 0x00)
+		payload = 0x0000
 	}
 
-	// run the request across the transport and wait for a response
-	res, err	= mc.executeRequest(req)
-	if err != nil {
-		return
-	}
+	err = mc.writeCoil(addr, payload)
 
-	// validate the response code
-	switch {
-	case res.functionCode == req.functionCode:
-		// expect 4 bytes (2 byte of address + 2 bytes of value)
-		if len(res.payload) != 4 ||
-		   // bytes 1-2 should be the coil address
-		   bytesToUint16(BIG_ENDIAN, res.payload[0:2]) != addr ||
-		   // bytes 3-4 should either be {0xff, 0x00} or {0x00, 0x00}
-		   // depending on the coil value
-		   (value == true && res.payload[2] != 0xff) ||
-		   res.payload[3] != 0x00 {
-			   err = ErrProtocolError
-			   return
-		   }
+	return
+}
 
-	case res.functionCode == (req.functionCode | 0x80):
-		if len(res.payload) != 1 {
-			err	= ErrProtocolError
-			return
-		}
+// Sends a write coil request (function code 05) with a specific payload
+// value instead of the standard 0xff00 (true) or 0x0000 (false).
+// This is a violation of the modbus spec and should almost never be necessary,
+// but a handful of vendors seem to be hiding various DO/coil control modes
+// behind it (e.g. toggle, interlock, delayed open/close, etc.).
+func (mc *ModbusClient) WriteCoilValue(addr uint16, payload uint16) (err error) {
+	mc.lock.Lock()
+	defer mc.lock.Unlock()
 
-		err	= mapExceptionCodeToError(res.payload[0])
-
-	default:
-		err	= ErrProtocolError
-		mc.logger.Warningf("unexpected response code (%v)", res.functionCode)
-	}
+	err = mc.writeCoil(addr, payload)
 
 	return
 }
 
 // Writes multiple coils (function code 15)
 func (mc *ModbusClient) WriteCoils(addr uint16, values []bool) (err error) {
-	var req			*pdu
-	var res			*pdu
-	var quantity		uint16
-	var encodedValues	[]byte
+	var req           *pdu
+	var res           *pdu
+	var quantity      uint16
+	var encodedValues []byte
 
 	mc.lock.Lock()
 	defer mc.lock.Unlock()
@@ -650,7 +622,7 @@ func (mc *ModbusClient) WriteCoils(addr uint16, values []bool) (err error) {
 		return
 	}
 
-	encodedValues	= encodeBools(values)
+	encodedValues = encodeBools(values)
 
 	// create and fill in the request object
 	req	= &pdu{
@@ -668,7 +640,7 @@ func (mc *ModbusClient) WriteCoils(addr uint16, values []bool) (err error) {
 	req.payload	= append(req.payload, encodedValues...)
 
 	// run the request across the transport and wait for a response
-	res, err	= mc.executeRequest(req)
+	res, err = mc.executeRequest(req)
 	if err != nil {
 		return
 	}
@@ -704,8 +676,8 @@ func (mc *ModbusClient) WriteCoils(addr uint16, values []bool) (err error) {
 
 // Writes a single 16-bit register (function code 06).
 func (mc *ModbusClient) WriteRegister(addr uint16, value uint16) (err error) {
-	var req		*pdu
-	var res		*pdu
+	var req	*pdu
+	var res	*pdu
 
 	mc.lock.Lock()
 	defer mc.lock.Unlock()
@@ -926,9 +898,9 @@ func (mc *ModbusClient) writeBytes(addr uint16, values []byte, observeEndianness
 // Reads and returns quantity booleans.
 // Digital inputs are read if di is true, otherwise coils are read.
 func (mc *ModbusClient) readBools(addr uint16, quantity uint16, di bool) (values []bool, err error) {
-	var req		*pdu
-	var res		*pdu
-	var expectedLen	int
+	var req	        *pdu
+	var res	        *pdu
+	var expectedLen int
 
 	mc.lock.Lock()
 	defer mc.lock.Unlock()
@@ -968,7 +940,7 @@ func (mc *ModbusClient) readBools(addr uint16, quantity uint16, di bool) (values
 	req.payload	= append(req.payload, uint16ToBytes(BIG_ENDIAN, quantity)...)
 
 	// run the request across the transport and wait for a response
-	res, err	= mc.executeRequest(req)
+	res, err = mc.executeRequest(req)
 	if err != nil {
 		return
 	}
@@ -1016,8 +988,8 @@ func (mc *ModbusClient) readBools(addr uint16, quantity uint16, di bool) (values
 
 // Reads and returns quantity registers of type regType, as bytes.
 func (mc *ModbusClient) readRegisters(addr uint16, quantity uint16, regType RegType) (bytes []byte, err error) {
-	var req		*pdu
-	var res		*pdu
+	var req	*pdu
+	var res	*pdu
 
 	mc.lock.Lock()
 	defer mc.lock.Unlock()
@@ -1060,7 +1032,7 @@ func (mc *ModbusClient) readRegisters(addr uint16, quantity uint16, regType RegT
 	req.payload	= append(req.payload, uint16ToBytes(BIG_ENDIAN, quantity)...)
 
 	// run the request across the transport and wait for a response
-	res, err	= mc.executeRequest(req)
+	res, err = mc.executeRequest(req)
 	if err != nil {
 		return
 	}
@@ -1083,7 +1055,7 @@ func (mc *ModbusClient) readRegisters(addr uint16, quantity uint16, regType RegT
 		}
 
 		// remove the byte count field from the returned slice
-		bytes	= res.payload[1:]
+		bytes = res.payload[1:]
 
 	case res.functionCode == (req.functionCode | 0x80):
 		if len(res.payload) != 1 {
@@ -1100,6 +1072,58 @@ func (mc *ModbusClient) readRegisters(addr uint16, quantity uint16, regType RegT
 
 	return
 }
+
+// Writes a single coil (function code 05) using the specified payload.
+func (mc *ModbusClient) writeCoil(addr uint16, payload uint16) (err error) {
+	var req	*pdu
+	var res	*pdu
+
+	// create and fill in the request object
+	req	= &pdu{
+		unitId:	      mc.unitId,
+		functionCode: fcWriteSingleCoil,
+	}
+
+	// coil address
+	req.payload	= uint16ToBytes(BIG_ENDIAN, addr)
+	// payload (coil value)
+	req.payload = append(req.payload, uint16ToBytes(BIG_ENDIAN, payload)...)
+
+	// run the request across the transport and wait for a response
+	res, err	= mc.executeRequest(req)
+	if err != nil {
+		return
+	}
+
+	// validate the response code
+	switch {
+	case res.functionCode == req.functionCode:
+		// expect 4 bytes (2 byte of address + 2 bytes of value)
+		if len(res.payload) != 4 ||
+		   // bytes 1-2 should be the coil address
+		   bytesToUint16(BIG_ENDIAN, res.payload[0:2]) != addr ||
+		   // bytes 3-4 should be an echo of the coil value
+		   bytesToUint16(BIG_ENDIAN, res.payload[2:4]) != payload {
+			   err = ErrProtocolError
+			   return
+		   }
+
+	case res.functionCode == (req.functionCode | 0x80):
+		if len(res.payload) != 1 {
+			err	= ErrProtocolError
+			return
+		}
+
+		err	= mapExceptionCodeToError(res.payload[0])
+
+	default:
+		err	= ErrProtocolError
+		mc.logger.Warningf("unexpected response code (%v)", res.functionCode)
+	}
+
+	return
+}
+
 
 // Writes multiple registers starting from base address addr.
 // Register values are passed as bytes, each value being exactly 2 bytes.
