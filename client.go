@@ -627,6 +627,77 @@ func (mc *ModbusClient) SKCCommand(argument uint8, command uint8, data uint16) (
 	return
 }
 
+// SKCStatus holds parsed fields from the SKC read status payload (command 0).
+type SKCStatus struct {
+	MotorAngles   []float64
+	WindSpeed     uint8
+	TrackStatus   []uint8
+	Alarms        uint8
+	HasWindSpeed  bool
+	HasTrackStatus bool
+	HasAlarms     bool
+}
+
+// ReadSKC reads the SKC status payload (command 0) and returns parsed values.
+func (mc *ModbusClient) ReadSKC() (status SKCStatus, err error) {
+	var payload []byte
+	var offset int
+	var raw uint16
+
+	payload, err = mc.SKCCommand(0x00, 0x00, 0x0000)
+	if err != nil {
+		return
+	}
+
+	// Motor positions occupy 20 bytes (10 motors, 2 bytes each).
+	if len(payload) < 20 {
+		err = ErrProtocolError
+		return
+	}
+
+	status.MotorAngles = make([]float64, 10)
+	for i := 0; i < 10; i++ {
+		offset = i * 2
+		raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
+		status.MotorAngles[i] = skcAngleFromRaw(raw)
+	}
+
+	// Wind speed at payload[20]
+	if len(payload) >= 21 {
+		status.WindSpeed = payload[20]
+		status.HasWindSpeed = true
+	}
+
+	// Track status for 10 motors at payload[21:31]
+	if len(payload) >= 31 {
+		status.TrackStatus = make([]uint8, 10)
+		for i := 0; i < 10; i++ {
+			status.TrackStatus[i] = uint8(payload[21+i])
+		}
+		status.HasTrackStatus = true
+	}
+
+	// Alarms byte at payload[31]
+	if len(payload) >= 32 {
+		status.Alarms = payload[31]
+		status.HasAlarms = true
+	}
+
+	return
+}
+
+func skcAngleFromRaw(raw uint16) float64 {
+	var signed int32
+
+	if raw > 0xEA38 {
+		signed = int32(raw) - 0xFFFF
+	} else {
+		signed = int32(raw)
+	}
+
+	return float64(signed) / 100.0
+}
+
 // Writes a single coil (function code 05)
 func (mc *ModbusClient) WriteCoil(addr uint16, value bool) (err error) {
 	var payload uint16
