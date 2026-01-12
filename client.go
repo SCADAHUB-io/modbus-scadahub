@@ -629,13 +629,13 @@ func (mc *ModbusClient) SKCCommand(argument uint8, command uint8, data uint16) (
 
 // SKCStatus holds parsed fields from the SKC read status payload (command 0).
 type SKCStatus struct {
-	MotorAngles   []float64
-	WindSpeed     uint8
-	TrackStatus   []uint8
-	Alarms        uint8
-	HasWindSpeed  bool
+	MotorAngles    []float64
+	WindSpeed      uint8
+	TrackStatus    []uint8
+	Alarms         uint8
+	HasWindSpeed   bool
 	HasTrackStatus bool
-	HasAlarms     bool
+	HasAlarms      bool
 }
 
 // ReadSKC reads the SKC status payload (command 0) and returns parsed values.
@@ -682,6 +682,60 @@ func (mc *ModbusClient) ReadSKC() (status SKCStatus, err error) {
 		status.Alarms = payload[31]
 		status.HasAlarms = true
 	}
+
+	return
+}
+
+// SKCAlarmReset sends the alarm reset command (command=5).
+func (mc *ModbusClient) SKCAlarmReset() (err error) {
+	_, err = mc.SKCCommand(0x00, 0x05, 0x000)
+	return
+}
+
+// SKCGoToAngle sends a "go to angle" command (command=2) for all motors.
+// Angle is 0..556 for a specific motor, or 10 for all motors.
+func (mc *ModbusClient) SKCGoToAngle(angle uint16) (err error) {
+	if angle > 556 {
+		return ErrUnexpectedParameters
+	}
+
+	_, err = mc.SKCCommand(0xa, 0x02, angle)
+
+	return
+}
+
+// SKCWriteINPosition writes the IN position parameter for the given axis (command=10).
+// Axis is 0..9 for a specific motor, or 10 for all motors.
+func (mc *ModbusClient) SKCWriteINPosition(axis uint8, value uint16) (err error) {
+	if axis > 10 {
+		return ErrUnexpectedParameters
+	}
+
+	_, err = mc.SKCCommand(axis, 0x0a, value)
+
+	return
+}
+
+// SKCWriteMotorLEN writes the motor LEN parameter for the given axis (command=11).
+// Axis is 0..9 for a specific motor, or 10 for all motors.
+func (mc *ModbusClient) SKCWriteMotorLEN(axis uint8, value uint16) (err error) {
+	if axis > 10 {
+		return ErrUnexpectedParameters
+	}
+
+	_, err = mc.SKCCommand(axis, 0x0b, value)
+
+	return
+}
+
+// SKCWriteParam writes a general parameter (command=12).
+// Param is 0..11 as defined by the SKC documentation.
+func (mc *ModbusClient) SKCWriteParam(param uint8, value uint16) (err error) {
+	if param > 11 {
+		return ErrUnexpectedParameters
+	}
+
+	_, err = mc.SKCCommand(param, 0x0c, value)
 
 	return
 }
