@@ -71,6 +71,17 @@ type ModbusClient struct {
 	transportType transportType
 }
 
+// SKCStatus holds parsed fields from the SKC read status payload (command 0).
+type SKCStatus struct {
+	MotorAngles    []float64
+	WindSpeed      uint8
+	TrackStatus    []uint8
+	Alarms         uint8
+	HasWindSpeed   bool
+	HasTrackStatus bool
+	HasAlarms      bool
+}
+
 // NewClient creates, configures and returns a modbus client object.
 func NewClient(conf *ClientConfiguration) (mc *ModbusClient, err error) {
 	var clientType string
@@ -562,9 +573,9 @@ func (mc *ModbusClient) ReadRawBytes(addr uint16, quantity uint16, regType RegTy
 	return
 }
 
-// Executes an SKC vendor-specific (Conver - Tracker Company) Modbus RTU command (function code 0x64).
+// Executes an SKC vendor-specific (Conver - Tracker Company) Modbus RTU command (function code 0x64 or 0x41).
 // Returns the response payload bytes following the ReceivedCommand field.
-func (mc *ModbusClient) SKCCommand(unitId uint8, argument uint8, command uint8, data uint16) (payload []byte, err error) {
+func (mc *ModbusClient) SKCCommand(unitId uint8, functionCode uint8, argument uint8, command uint8, data uint16) (payload []byte, err error) {
 	var req *pdu
 	var res *pdu
 
@@ -574,7 +585,7 @@ func (mc *ModbusClient) SKCCommand(unitId uint8, argument uint8, command uint8, 
 	// create and fill in the request object
 	req = &pdu{
 		unitId:       unitId,
-		functionCode: fcConvertSKC,
+		functionCode: functionCode,
 	}
 
 	// argument and command
@@ -627,24 +638,13 @@ func (mc *ModbusClient) SKCCommand(unitId uint8, argument uint8, command uint8, 
 	return
 }
 
-// SKCStatus holds parsed fields from the SKC read status payload (command 0).
-type SKCStatus struct {
-	MotorAngles    []float64
-	WindSpeed      uint8
-	TrackStatus    []uint8
-	Alarms         uint8
-	HasWindSpeed   bool
-	HasTrackStatus bool
-	HasAlarms      bool
-}
-
 // ReadSKC reads the SKC status payload (command 0) and returns parsed values.
 func (mc *ModbusClient) ReadSKC(unitId uint8) (status SKCStatus, err error) {
 	var payload []byte
 	var offset int
 	var raw uint16
 
-	payload, err = mc.SKCCommand(unitId, 0x00, 0x00, 0x0000)
+	payload, err = mc.SKCCommand(fcConvertSKC, unitId, 0x00, 0x00, 0x0000)
 	if err != nil {
 		return
 	}
@@ -688,7 +688,7 @@ func (mc *ModbusClient) ReadSKC(unitId uint8) (status SKCStatus, err error) {
 
 // SKCAlarmReset sends the alarm reset command (command=5).
 func (mc *ModbusClient) SKCAlarmReset(unitId uint8) (err error) {
-	_, err = mc.SKCCommand(unitId, 0x00, 0x05, 0x000)
+	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x00, 0x05, 0x000)
 	return
 }
 
@@ -699,7 +699,7 @@ func (mc *ModbusClient) SKCGoToAngle(unitId uint8, angle uint16) (err error) {
 		return ErrUnexpectedParameters
 	}
 
-	_, err = mc.SKCCommand(unitId, 0x00, 0x02, angle)
+	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x00, 0x02, angle)
 
 	return
 }
@@ -711,7 +711,7 @@ func (mc *ModbusClient) SKCWriteINPosition(unitId uint8, axis uint8, value uint1
 		return ErrUnexpectedParameters
 	}
 
-	_, err = mc.SKCCommand(unitId, axis, 0x0a, value)
+	_, err = mc.SKCCommand(fcConvertSKC, unitId, axis, 0x0a, value)
 
 	return
 }
@@ -723,7 +723,7 @@ func (mc *ModbusClient) SKCWriteMotorLEN(unitId uint8, axis uint8, value uint16)
 		return ErrUnexpectedParameters
 	}
 
-	_, err = mc.SKCCommand(unitId, axis, 0x0b, value)
+	_, err = mc.SKCCommand(fcConvertSKC, unitId, axis, 0x0b, value)
 
 	return
 }
@@ -735,8 +735,38 @@ func (mc *ModbusClient) SKCWriteParam(unitId uint8, param uint8, value uint16) (
 		return ErrUnexpectedParameters
 	}
 
-	_, err = mc.SKCCommand(unitId, param, 0x0c, value)
+	_, err = mc.SKCCommand(fcConvertSKC, unitId, param, 0x0c, value)
 
+	return
+}
+
+// SKCGlobalIn sends the global IN command (command=10, subcommand=3, value=0x3DE).
+// This command will globally set all motors to their IN position.
+// It is typically used to reset all motors to their home position after a power cycle or fault.
+func (mc *ModbusClient) SKCGlobalIn(unitId uint8) (err error) {
+	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0xA, 0x3, 0x3DE)
+	return
+}
+
+// SKCSetAuto sets the tracker to auto mode (command=0, subcommand=6, value=0).
+// This command will set the tracker to auto mode.
+func (mc *ModbusClient) SKCSetAuto(unitId uint8) (err error) {
+	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0x0, 0x6, 0x000)
+	return
+}
+
+// SKCSetManual sets the tracker to manual mode (command=1, subcommand=6, value=0).
+// This command will set the tracker to manual mode.
+func (mc *ModbusClient) SKCSetManual(unitId uint8) (err error) {
+	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0x1, 0x6, 0x000)
+	return
+}
+
+// SKCGoToZero sends the global "go to zero" command (command=10, subcommand=3, value=0).
+// This command will globally set all motors to their zero position.
+// It is typically used to reset all motors to their zero position after a power cycle or fault.
+func (mc *ModbusClient) SKCGoToZero(unitId uint8) (err error) {
+	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0xA, 0x3, 0x000)
 	return
 }
 

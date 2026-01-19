@@ -225,7 +225,8 @@ func expectedResponseLenth(responseCode uint8, responseLength uint8) (byteCount 
 		fcReadInputRegisters,
 		fcReadCoils,
 		fcReadDiscreteInputs,
-		fcConvertSKC:
+		fcConvertSKC,
+		fcConvertSKCWrite:
 		byteCount = int(responseLength)
 	case fcWriteSingleRegister,
 		fcWriteMultipleRegisters,
@@ -243,7 +244,8 @@ func expectedResponseLenth(responseCode uint8, responseLength uint8) (byteCount 
 		fcWriteSingleCoil | 0x80,
 		fcWriteMultipleCoils | 0x80,
 		fcMaskWriteRegister | 0x80,
-		fcConvertSKC | 0x80:
+		fcConvertSKC | 0x80,
+		fcConvertSKCWrite | 0x80:
 		byteCount = 0
 	default:
 		err = ErrProtocolError
