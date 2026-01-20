@@ -575,7 +575,7 @@ func (mc *ModbusClient) ReadRawBytes(addr uint16, quantity uint16, regType RegTy
 
 // Executes an SKC vendor-specific (Conver - Tracker Company) Modbus RTU command (function code 0x64 or 0x41).
 // Returns the response payload bytes following the ReceivedCommand field.
-func (mc *ModbusClient) SKCCommand(unitId uint8, functionCode uint8, argument uint8, command uint8, data uint16) (payload []byte, err error) {
+func (mc *ModbusClient) SKCCommand(functionCode uint8, unitId uint8, argument uint8, command uint8, data uint16) (payload []byte, err error) {
 	var req *pdu
 	var res *pdu
 
@@ -745,6 +745,20 @@ func (mc *ModbusClient) SKCWriteParam(unitId uint8, param uint8, value uint16) (
 // It is typically used to reset all motors to their home position after a power cycle or fault.
 func (mc *ModbusClient) SKCGlobalIn(unitId uint8) (err error) {
 	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0xA, 0x3, 0x3DE)
+	return
+}
+
+// SKCSetWindAlarm sets the wind alarm (command=1, subcommand=2, value=0).
+// This command will set the remote wind alarm and set to a safe position without expiring time.
+func (mc *ModbusClient) SKCSetWindAlarm(unitId uint8) (err error) {
+	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0x1, 0x2, 0x000)
+	return
+}
+
+// SKCClearWindAlarm clears the wind alarm (command=2, subcommand=2, value=0).
+// This command will clear the remote wind alarm.
+func (mc *ModbusClient) SKCClearWindAlarm(unitId uint8) (err error) {
+	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0x2, 0x2, 0x000)
 	return
 }
 
