@@ -574,13 +574,20 @@ func (mc *ModbusClient) ReadRawBytes(addr uint16, quantity uint16, regType RegTy
 }
 
 // Executes an SKC vendor-specific (Conver - Tracker Company) Modbus RTU command (function code 0x64 or 0x41).
+// The SKC command field is one byte: high nibble = argument, low nibble = command.
 // Returns the response payload bytes following the ReceivedCommand field.
 func (mc *ModbusClient) SKCCommand(functionCode uint8, unitId uint8, argument uint8, command uint8, data uint16) (payload []byte, err error) {
 	var req *pdu
 	var res *pdu
+	var commandField uint8
 
 	mc.lock.Lock()
 	defer mc.lock.Unlock()
+
+	if argument > 0x0f || command > 0x0f {
+		err = ErrUnexpectedParameters
+		return
+	}
 
 	// create and fill in the request object
 	req = &pdu{
@@ -588,8 +595,9 @@ func (mc *ModbusClient) SKCCommand(functionCode uint8, unitId uint8, argument ui
 		functionCode: functionCode,
 	}
 
-	// argument and command
-	req.payload = []byte{argument, command}
+	// SKC command field packs argument (high nibble) and command (low nibble).
+	commandField = (argument << 4) | (command & 0x0f)
+	req.payload = []byte{commandField}
 	// data (16-bit)
 	req.payload = append(req.payload, uint16ToBytes(BIG_ENDIAN, data)...)
 
@@ -610,12 +618,6 @@ func (mc *ModbusClient) SKCCommand(functionCode uint8, unitId uint8, argument ui
 
 		byteCount := int(res.payload[0])
 		if byteCount < 1 || len(res.payload) != byteCount+1 {
-			err = ErrProtocolError
-			return
-		}
-
-		// validate the received command echo
-		if res.payload[1] != command {
 			err = ErrProtocolError
 			return
 		}
