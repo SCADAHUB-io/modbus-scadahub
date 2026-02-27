@@ -74,12 +74,46 @@ type ModbusClient struct {
 // SKCStatus holds parsed fields from the SKC read status payload (command 0).
 type SKCStatus struct {
 	MotorAngles    []float64
+	INPositions    []float64
+	LENPositions   []float64
+	AxisAzimuth    float64
+	AxisTilt       float64
+	PitchA         uint16
+	PitchB         uint16
+	PVModule       uint16
+	WindAlarmThreshold uint8
+	ParamA         uint16
+	ParamB         uint16
+	ParamC         uint16
+	WindSafePosition float64
+	ExtendedAddress uint16
+	NightPosition  float64
+	GammaLimit     float64
+	WindFinalHour  uint8
+	WindPreMax     uint8
 	WindSpeed      uint8
 	TrackStatus    []uint8
 	Alarms         uint8
 	HasWindSpeed   bool
 	HasTrackStatus bool
 	HasAlarms      bool
+	HasINPositions bool
+	HasLENPositions bool
+	HasAxisAzimuth bool
+	HasAxisTilt    bool
+	HasPitchA      bool
+	HasPitchB      bool
+	HasPVModule    bool
+	HasWindAlarmThreshold bool
+	HasParamA      bool
+	HasParamB      bool
+	HasParamC      bool
+	HasWindSafePosition bool
+	HasExtendedAddress bool
+	HasNightPosition bool
+	HasGammaLimit   bool
+	HasWindFinalHour bool
+	HasWindPreMax   bool
 }
 
 // NewClient creates, configures and returns a modbus client object.
@@ -651,17 +685,18 @@ func (mc *ModbusClient) ReadSKC(unitId uint8) (status SKCStatus, err error) {
 		return
 	}
 
-	// Motor positions occupy 20 bytes (10 motors, 2 bytes each).
+	// Motor positions occupy 20 bytes (10 motors, 2 bytes each)
 	if len(payload) < 20 {
 		err = ErrProtocolError
 		return
 	}
 
+	// Angles for 10 motors at payload[0:20] (converted to degrees with factor /100)
 	status.MotorAngles = make([]float64, 10)
 	for i := 0; i < 10; i++ {
 		offset = i * 2
 		raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
-		status.MotorAngles[i] = skcAngleFromRaw(raw)
+		status.MotorAngles[i] = skcScaledFromRaw(raw, 100.0)
 	}
 
 	// Wind speed at payload[20]
@@ -683,6 +718,123 @@ func (mc *ModbusClient) ReadSKC(unitId uint8) (status SKCStatus, err error) {
 	if len(payload) >= 32 {
 		status.Alarms = payload[31]
 		status.HasAlarms = true
+	}
+
+	// IN position for 10 motors at payload[32:52] (2 bytes each, converted to degrees with factor /10).
+	if len(payload) >= 52 {
+		status.INPositions = make([]float64, 10)
+		for i := 0; i < 10; i++ {
+			offset = 32 + i*2
+			raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
+			status.INPositions[i] = skcScaledFromRaw(raw, 10.0)
+		}
+		status.HasINPositions = true
+	}
+
+	// LEN position for 10 motors at payload[52:72] (2 bytes each, converted to degrees with factor /10).
+	if len(payload) >= 72 {
+		status.LENPositions = make([]float64, 10)
+		for i := 0; i < 10; i++ {
+			offset = 52 + i*2
+			raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
+			status.LENPositions[i] = skcScaledFromRaw(raw, 10.0)
+		}
+		status.HasLENPositions = true
+	}
+
+	// Axis azimuth at payload[72:74] (2 bytes, converted with factor /10).
+	if len(payload) >= 74 {
+		raw = bytesToUint16(BIG_ENDIAN, payload[72:74])
+		status.AxisAzimuth = skcScaledFromRaw(raw, 10.0)
+		status.HasAxisAzimuth = true
+	}
+
+	// Axis tilt at payload[74:76] (2 bytes, converted with factor /10).
+	if len(payload) >= 76 {
+		raw = bytesToUint16(BIG_ENDIAN, payload[74:76])
+		status.AxisTilt = skcScaledFromRaw(raw, 10.0)
+		status.HasAxisTilt = true
+	}
+
+	// Pitch A at payload[76:78] (2 bytes, raw value).
+	if len(payload) >= 78 {
+		status.PitchA = bytesToUint16(BIG_ENDIAN, payload[76:78])
+		status.HasPitchA = true
+	}
+
+	// Pitch B at payload[78:80] (2 bytes, raw value).
+	if len(payload) >= 80 {
+		status.PitchB = bytesToUint16(BIG_ENDIAN, payload[78:80])
+		status.HasPitchB = true
+	}
+
+	// PV module at payload[80:82] (2 bytes, raw value).
+	if len(payload) >= 82 {
+		status.PVModule = bytesToUint16(BIG_ENDIAN, payload[80:82])
+		status.HasPVModule = true
+	}
+
+	// Wind alarm threshold at payload[82] (1 byte, raw value).
+	if len(payload) >= 83 {
+		status.WindAlarmThreshold = payload[82]
+		status.HasWindAlarmThreshold = true
+	}
+
+	// Param A at payload[83:85] (2 bytes, raw value).
+	if len(payload) >= 85 {
+		status.ParamA = bytesToUint16(BIG_ENDIAN, payload[83:85])
+		status.HasParamA = true
+	}
+
+	// Param B at payload[85:87] (2 bytes, raw value).
+	if len(payload) >= 87 {
+		status.ParamB = bytesToUint16(BIG_ENDIAN, payload[85:87])
+		status.HasParamB = true
+	}
+
+	// Param C at payload[87:89] (2 bytes, raw value).
+	if len(payload) >= 89 {
+		status.ParamC = bytesToUint16(BIG_ENDIAN, payload[87:89])
+		status.HasParamC = true
+	}
+
+	// Wind safe position at payload[89:91] (2 bytes, converted with factor /10).
+	if len(payload) >= 91 {
+		raw = bytesToUint16(BIG_ENDIAN, payload[89:91])
+		status.WindSafePosition = skcScaledFromRaw(raw, 10.0)
+		status.HasWindSafePosition = true
+	}
+
+	// Extended address at payload[91:93] (2 bytes, raw value).
+	if len(payload) >= 93 {
+		status.ExtendedAddress = bytesToUint16(BIG_ENDIAN, payload[91:93])
+		status.HasExtendedAddress = true
+	}
+
+	// Night position at payload[93:95] (2 bytes, converted with factor /10).
+	if len(payload) >= 95 {
+		raw = bytesToUint16(BIG_ENDIAN, payload[93:95])
+		status.NightPosition = skcScaledFromRaw(raw, 10.0)
+		status.HasNightPosition = true
+	}
+
+	// Gamma limit at payload[95:97] (2 bytes, converted with factor /10).
+	if len(payload) >= 97 {
+		raw = bytesToUint16(BIG_ENDIAN, payload[95:97])
+		status.GammaLimit = skcScaledFromRaw(raw, 10.0)
+		status.HasGammaLimit = true
+	}
+
+	// Wind final hour at payload[97] (1 byte, raw value).
+	if len(payload) >= 98 {
+		status.WindFinalHour = payload[97]
+		status.HasWindFinalHour = true
+	}
+
+	// Wind pre-max at payload[98] (1 byte, raw value).
+	if len(payload) >= 99 {
+		status.WindPreMax = payload[98]
+		status.HasWindPreMax = true
 	}
 
 	return
@@ -786,7 +938,10 @@ func (mc *ModbusClient) SKCGoToZero(unitId uint8) (err error) {
 	return
 }
 
-func skcAngleFromRaw(raw uint16) float64 {
+// skcScaledFromRaw takes a raw SKC value and scales it according to the given factor.
+// The function first interprets the raw value as a signed 16-bit integer, and then divides it by the given factor.
+// The result is a float64 value representing the scaled value.
+func skcScaledFromRaw(raw uint16, factor float64) float64 {
 	var signed int32
 
 	if raw > 0xEA38 {
@@ -795,7 +950,7 @@ func skcAngleFromRaw(raw uint16) float64 {
 		signed = int32(raw)
 	}
 
-	return float64(signed) / 100.0
+	return float64(signed) / factor
 }
 
 // Writes a single coil (function code 05)
