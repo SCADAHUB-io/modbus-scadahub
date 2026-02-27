@@ -73,47 +73,27 @@ type ModbusClient struct {
 
 // SKCStatus holds parsed fields from the SKC read status payload (command 0).
 type SKCStatus struct {
-	MotorAngles    []float64
-	INPositions    []float64
-	LENPositions   []float64
-	AxisAzimuth    float64
-	AxisTilt       float64
-	PitchA         uint16
-	PitchB         uint16
-	PVModule       uint16
-	WindAlarmThreshold uint8
-	ParamA         uint16
-	ParamB         uint16
-	ParamC         uint16
-	WindSafePosition float64
-	ExtendedAddress uint16
-	NightPosition  float64
-	GammaLimit     float64
-	WindFinalHour  uint8
-	WindPreMax     uint8
-	WindSpeed      uint8
-	TrackStatus    []uint8
-	Alarms         uint8
-	HasWindSpeed   bool
-	HasTrackStatus bool
-	HasAlarms      bool
-	HasINPositions bool
-	HasLENPositions bool
-	HasAxisAzimuth bool
-	HasAxisTilt    bool
-	HasPitchA      bool
-	HasPitchB      bool
-	HasPVModule    bool
-	HasWindAlarmThreshold bool
-	HasParamA      bool
-	HasParamB      bool
-	HasParamC      bool
-	HasWindSafePosition bool
-	HasExtendedAddress bool
-	HasNightPosition bool
-	HasGammaLimit   bool
-	HasWindFinalHour bool
-	HasWindPreMax   bool
+	MotorAngles           []float64
+	INPositions           []float64
+	LENPositions          []float64
+	AxisAzimuth           float64
+	AxisTilt              float64
+	PitchA                uint16
+	PitchB                uint16
+	PVModule              uint16
+	WindAlarmThreshold    uint8
+	ParamA                uint16
+	ParamB                uint16
+	ParamC                uint16
+	WindSafePosition      float64
+	ExtendedAddress       uint16
+	NightPosition         float64
+	GammaLimit            float64
+	WindFinalHour         uint8
+	WindPreMax            uint8
+	WindSpeed             uint8
+	TrackStatus           []uint8
+	Alarms                uint8
 }
 
 // NewClient creates, configures and returns a modbus client object.
@@ -677,165 +657,48 @@ func (mc *ModbusClient) SKCCommand(functionCode uint8, unitId uint8, argument ui
 // ReadSKC reads the SKC status payload (command 0) and returns parsed values.
 func (mc *ModbusClient) ReadSKC(unitId uint8) (status SKCStatus, err error) {
 	var payload []byte
-	var offset int
-	var raw uint16
 
 	payload, err = mc.SKCCommand(fcConvertSKC, unitId, 0x00, 0x00, 0x0000)
 	if err != nil {
 		return
 	}
 
-	// Motor positions occupy 20 bytes (10 motors, 2 bytes each)
-	if len(payload) < 20 {
-		err = ErrProtocolError
-		return
-	}
+	// Base status block (payload bytes 0..31).
+	fillSKCMotorAngles(payload, &status)
+	fillSKCWindSpeed(payload, &status)
+	fillSKCTrackStatus(payload, &status)
+	fillSKCAlarms(payload, &status)
 
-	// Angles for 10 motors at payload[0:20] (converted to degrees with factor /100)
-	status.MotorAngles = make([]float64, 10)
-	for i := 0; i < 10; i++ {
-		offset = i * 2
-		raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
-		status.MotorAngles[i] = skcScaledFromRaw(raw, 100.0)
-	}
+	// Position block (payload bytes 32..71).
+	fillSKCINPositions(payload, &status)
+	fillSKCLENPositions(payload, &status)
 
-	// Wind speed at payload[20]
-	if len(payload) >= 21 {
-		status.WindSpeed = payload[20]
-		status.HasWindSpeed = true
-	}
+	// Axis block (payload bytes 72..75).
+	fillSKCAxisAzimuth(payload, &status)
+	fillSKCAxisTilt(payload, &status)
 
-	// Track status for 10 motors at payload[21:31]
-	if len(payload) >= 31 {
-		status.TrackStatus = make([]uint8, 10)
-		for i := 0; i < 10; i++ {
-			status.TrackStatus[i] = uint8(payload[21+i])
-		}
-		status.HasTrackStatus = true
-	}
+	// Pitch block (payload bytes 76..79).
+	fillSKCPitchA(payload, &status)
+	fillSKCPitchB(payload, &status)
 
-	// Alarms byte at payload[31]
-	if len(payload) >= 32 {
-		status.Alarms = payload[31]
-		status.HasAlarms = true
-	}
+	// PV Module block (payload bytes 80..81).
+	fillSKCPVModule(payload, &status)
 
-	// IN position for 10 motors at payload[32:52] (2 bytes each, converted to degrees with factor /10).
-	if len(payload) >= 52 {
-		status.INPositions = make([]float64, 10)
-		for i := 0; i < 10; i++ {
-			offset = 32 + i*2
-			raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
-			status.INPositions[i] = skcScaledFromRaw(raw, 10.0)
-		}
-		status.HasINPositions = true
-	}
+	// Wind Alarm Threshold block (payload bytes 82).
+	fillSKCWindAlarmThreshold(payload, &status)
 
-	// LEN position for 10 motors at payload[52:72] (2 bytes each, converted to degrees with factor /10).
-	if len(payload) >= 72 {
-		status.LENPositions = make([]float64, 10)
-		for i := 0; i < 10; i++ {
-			offset = 52 + i*2
-			raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
-			status.LENPositions[i] = skcScaledFromRaw(raw, 10.0)
-		}
-		status.HasLENPositions = true
-	}
+	// Parameters block (payload bytes 83..88).
+	fillSKCParamA(payload, &status)
+	fillSKCParamB(payload, &status)
+	fillSKCParamC(payload, &status)
 
-	// Axis azimuth at payload[72:74] (2 bytes, converted with factor /10).
-	if len(payload) >= 74 {
-		raw = bytesToUint16(BIG_ENDIAN, payload[72:74])
-		status.AxisAzimuth = skcScaledFromRaw(raw, 10.0)
-		status.HasAxisAzimuth = true
-	}
-
-	// Axis tilt at payload[74:76] (2 bytes, converted with factor /10).
-	if len(payload) >= 76 {
-		raw = bytesToUint16(BIG_ENDIAN, payload[74:76])
-		status.AxisTilt = skcScaledFromRaw(raw, 10.0)
-		status.HasAxisTilt = true
-	}
-
-	// Pitch A at payload[76:78] (2 bytes, raw value).
-	if len(payload) >= 78 {
-		status.PitchA = bytesToUint16(BIG_ENDIAN, payload[76:78])
-		status.HasPitchA = true
-	}
-
-	// Pitch B at payload[78:80] (2 bytes, raw value).
-	if len(payload) >= 80 {
-		status.PitchB = bytesToUint16(BIG_ENDIAN, payload[78:80])
-		status.HasPitchB = true
-	}
-
-	// PV module at payload[80:82] (2 bytes, raw value).
-	if len(payload) >= 82 {
-		status.PVModule = bytesToUint16(BIG_ENDIAN, payload[80:82])
-		status.HasPVModule = true
-	}
-
-	// Wind alarm threshold at payload[82] (1 byte, raw value).
-	if len(payload) >= 83 {
-		status.WindAlarmThreshold = payload[82]
-		status.HasWindAlarmThreshold = true
-	}
-
-	// Param A at payload[83:85] (2 bytes, raw value).
-	if len(payload) >= 85 {
-		status.ParamA = bytesToUint16(BIG_ENDIAN, payload[83:85])
-		status.HasParamA = true
-	}
-
-	// Param B at payload[85:87] (2 bytes, raw value).
-	if len(payload) >= 87 {
-		status.ParamB = bytesToUint16(BIG_ENDIAN, payload[85:87])
-		status.HasParamB = true
-	}
-
-	// Param C at payload[87:89] (2 bytes, raw value).
-	if len(payload) >= 89 {
-		status.ParamC = bytesToUint16(BIG_ENDIAN, payload[87:89])
-		status.HasParamC = true
-	}
-
-	// Wind safe position at payload[89:91] (2 bytes, converted with factor /10).
-	if len(payload) >= 91 {
-		raw = bytesToUint16(BIG_ENDIAN, payload[89:91])
-		status.WindSafePosition = skcScaledFromRaw(raw, 10.0)
-		status.HasWindSafePosition = true
-	}
-
-	// Extended address at payload[91:93] (2 bytes, raw value).
-	if len(payload) >= 93 {
-		status.ExtendedAddress = bytesToUint16(BIG_ENDIAN, payload[91:93])
-		status.HasExtendedAddress = true
-	}
-
-	// Night position at payload[93:95] (2 bytes, converted with factor /10).
-	if len(payload) >= 95 {
-		raw = bytesToUint16(BIG_ENDIAN, payload[93:95])
-		status.NightPosition = skcScaledFromRaw(raw, 10.0)
-		status.HasNightPosition = true
-	}
-
-	// Gamma limit at payload[95:97] (2 bytes, converted with factor /10).
-	if len(payload) >= 97 {
-		raw = bytesToUint16(BIG_ENDIAN, payload[95:97])
-		status.GammaLimit = skcScaledFromRaw(raw, 10.0)
-		status.HasGammaLimit = true
-	}
-
-	// Wind final hour at payload[97] (1 byte, raw value).
-	if len(payload) >= 98 {
-		status.WindFinalHour = payload[97]
-		status.HasWindFinalHour = true
-	}
-
-	// Wind pre-max at payload[98] (1 byte, raw value).
-	if len(payload) >= 99 {
-		status.WindPreMax = payload[98]
-		status.HasWindPreMax = true
-	}
+	// Safety and runtime limits block (payload bytes 89..98).
+	fillSKCWindSafePosition(payload, &status)
+	fillSKCExtendedAddress(payload, &status)
+	fillSKCNightPosition(payload, &status)
+	fillSKCGammaLimit(payload, &status)
+	fillSKCWindFinalHour(payload, &status)
+	fillSKCWindPreMax(payload, &status)
 
 	return
 }
@@ -936,21 +799,6 @@ func (mc *ModbusClient) SKCSetManual(unitId uint8) (err error) {
 func (mc *ModbusClient) SKCGoToZero(unitId uint8) (err error) {
 	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0xA, 0x3, 0x000)
 	return
-}
-
-// skcScaledFromRaw takes a raw SKC value and scales it according to the given factor.
-// The function first interprets the raw value as a signed 16-bit integer, and then divides it by the given factor.
-// The result is a float64 value representing the scaled value.
-func skcScaledFromRaw(raw uint16, factor float64) float64 {
-	var signed int32
-
-	if raw > 0xEA38 {
-		signed = int32(raw) - 0xFFFF
-	} else {
-		signed = int32(raw)
-	}
-
-	return float64(signed) / factor
 }
 
 // Writes a single coil (function code 05)
@@ -1623,4 +1471,219 @@ func (mc *ModbusClient) executeRequest(req *pdu) (res *pdu, err error) {
 	}
 
 	return
+}
+
+// fillSKCMotorAngles parses motor angles from payload[0:20].
+// Layout: 10 values, 2 bytes each (big-endian), scaled by /100.
+func fillSKCMotorAngles(payload []byte, status *SKCStatus) {
+	var offset int
+	var raw uint16
+
+	if len(payload) >= 20 {
+		status.MotorAngles = make([]float64, 10)
+		for i := 0; i < 10; i++ {
+			offset = i * 2
+			raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
+			status.MotorAngles[i] = skcScaledFromRaw(raw, 100.0)
+		}
+	}
+}
+
+// fillSKCWindSpeed parses wind speed from payload[20].
+// Layout: 1 byte.
+func fillSKCWindSpeed(payload []byte, status *SKCStatus) {
+	if len(payload) >= 21 {
+		status.WindSpeed = payload[20]
+	}
+}
+
+// fillSKCTrackStatus parses track status from payload[21:31].
+// Layout: 10 values, 1 byte each.
+func fillSKCTrackStatus(payload []byte, status *SKCStatus) {
+	if len(payload) >= 31 {
+		status.TrackStatus = make([]uint8, 10)
+		for i := 0; i < 10; i++ {
+			status.TrackStatus[i] = payload[21+i]
+		}
+	}
+}
+
+// fillSKCAlarms parses alarms from payload[31].
+// Layout: 1 byte.
+func fillSKCAlarms(payload []byte, status *SKCStatus) {
+	if len(payload) >= 32 {
+		status.Alarms = payload[31]
+	}
+}
+
+// fillSKCINPositions parses IN positions from payload[32:52].
+// Layout: 10 values, 2 bytes each (big-endian), scaled by /10.
+func fillSKCINPositions(payload []byte, status *SKCStatus) {
+	var offset int
+	var raw uint16
+
+	if len(payload) >= 52 {
+		status.INPositions = make([]float64, 10)
+		for i := 0; i < 10; i++ {
+			offset = 32 + i*2
+			raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
+			status.INPositions[i] = skcScaledFromRaw(raw, 10.0)
+		}
+	}
+}
+
+// fillSKCLENPositions parses LEN positions from payload[52:72].
+// Layout: 10 values, 2 bytes each (big-endian), scaled by /10.
+func fillSKCLENPositions(payload []byte, status *SKCStatus) {
+	var offset int
+	var raw uint16
+
+	if len(payload) >= 72 {
+		status.LENPositions = make([]float64, 10)
+		for i := 0; i < 10; i++ {
+			offset = 52 + i*2
+			raw = bytesToUint16(BIG_ENDIAN, payload[offset:offset+2])
+			status.LENPositions[i] = skcScaledFromRaw(raw, 10.0)
+		}
+	}
+}
+
+// fillSKCAxisAzimuth parses axis azimuth from payload[72:74].
+// Layout: 2 bytes (big-endian), scaled by /10.
+func fillSKCAxisAzimuth(payload []byte, status *SKCStatus) {
+	if len(payload) >= 74 {
+		raw := bytesToUint16(BIG_ENDIAN, payload[72:74])
+		status.AxisAzimuth = skcScaledFromRaw(raw, 10.0)
+	}
+}
+
+// fillSKCAxisTilt parses axis tilt from payload[74:76].
+// Layout: 2 bytes (big-endian), scaled by /10.
+func fillSKCAxisTilt(payload []byte, status *SKCStatus) {
+	if len(payload) >= 76 {
+		raw := bytesToUint16(BIG_ENDIAN, payload[74:76])
+		status.AxisTilt = skcScaledFromRaw(raw, 10.0)
+	}
+}
+
+// fillSKCPitchA parses Pitch A from payload[76:78].
+// Layout: 2 bytes (big-endian).
+func fillSKCPitchA(payload []byte, status *SKCStatus) {
+	if len(payload) >= 78 {
+		status.PitchA = bytesToUint16(BIG_ENDIAN, payload[76:78])
+	}
+}
+
+// fillSKCPitchB parses Pitch B from payload[78:80].
+// Layout: 2 bytes (big-endian).
+func fillSKCPitchB(payload []byte, status *SKCStatus) {
+	if len(payload) >= 80 {
+		status.PitchB = bytesToUint16(BIG_ENDIAN, payload[78:80])
+	}
+}
+
+// fillSKCPVModule parses PV module from payload[80:82].
+// Layout: 2 bytes (big-endian).
+func fillSKCPVModule(payload []byte, status *SKCStatus) {
+	if len(payload) >= 82 {
+		status.PVModule = bytesToUint16(BIG_ENDIAN, payload[80:82])
+	}
+}
+
+// fillSKCWindAlarmThreshold parses wind alarm threshold from payload[82].
+// Layout: 1 byte.
+func fillSKCWindAlarmThreshold(payload []byte, status *SKCStatus) {
+	if len(payload) >= 83 {
+		status.WindAlarmThreshold = payload[82]
+	}
+}
+
+// fillSKCParamA parses parameter A from payload[83:85].
+// Layout: 2 bytes (big-endian).
+func fillSKCParamA(payload []byte, status *SKCStatus) {
+	if len(payload) >= 85 {
+		status.ParamA = bytesToUint16(BIG_ENDIAN, payload[83:85])
+	}
+}
+
+// fillSKCParamB parses parameter B from payload[85:87].
+// Layout: 2 bytes (big-endian).
+func fillSKCParamB(payload []byte, status *SKCStatus) {
+	if len(payload) >= 87 {
+		status.ParamB = bytesToUint16(BIG_ENDIAN, payload[85:87])
+	}
+}
+
+// fillSKCParamC parses parameter C from payload[87:89].
+// Layout: 2 bytes (big-endian).
+func fillSKCParamC(payload []byte, status *SKCStatus) {
+	if len(payload) >= 89 {
+		status.ParamC = bytesToUint16(BIG_ENDIAN, payload[87:89])
+	}
+}
+
+// fillSKCWindSafePosition parses wind safe position from payload[89:91].
+// Layout: 2 bytes (big-endian), scaled by /10.
+func fillSKCWindSafePosition(payload []byte, status *SKCStatus) {
+	if len(payload) >= 91 {
+		raw := bytesToUint16(BIG_ENDIAN, payload[89:91])
+		status.WindSafePosition = skcScaledFromRaw(raw, 10.0)
+	}
+}
+
+// fillSKCExtendedAddress parses extended address from payload[91:93].
+// Layout: 2 bytes (big-endian).
+func fillSKCExtendedAddress(payload []byte, status *SKCStatus) {
+	if len(payload) >= 93 {
+		status.ExtendedAddress = bytesToUint16(BIG_ENDIAN, payload[91:93])
+	}
+}
+
+// fillSKCNightPosition parses night position from payload[93:95].
+// Layout: 2 bytes (big-endian), scaled by /10.
+func fillSKCNightPosition(payload []byte, status *SKCStatus) {
+	if len(payload) >= 95 {
+		raw := bytesToUint16(BIG_ENDIAN, payload[93:95])
+		status.NightPosition = skcScaledFromRaw(raw, 10.0)
+	}
+}
+
+// fillSKCGammaLimit parses gamma limit from payload[95:97].
+// Layout: 2 bytes (big-endian), scaled by /10.
+func fillSKCGammaLimit(payload []byte, status *SKCStatus) {
+	if len(payload) >= 97 {
+		raw := bytesToUint16(BIG_ENDIAN, payload[95:97])
+		status.GammaLimit = skcScaledFromRaw(raw, 10.0)
+	}
+}
+
+// fillSKCWindFinalHour parses wind final hour from payload[97].
+// Layout: 1 byte.
+func fillSKCWindFinalHour(payload []byte, status *SKCStatus) {
+	if len(payload) >= 98 {
+		status.WindFinalHour = payload[97]
+	}
+}
+
+// fillSKCWindPreMax parses wind pre-max from payload[98].
+// Layout: 1 byte.
+func fillSKCWindPreMax(payload []byte, status *SKCStatus) {
+	if len(payload) >= 99 {
+		status.WindPreMax = payload[98]
+	}
+}
+
+// skcScaledFromRaw takes a raw SKC value and scales it according to the given factor.
+// The function first interprets the raw value as a signed 16-bit integer, and then divides it by the given factor.
+// The result is a float64 value representing the scaled value.
+func skcScaledFromRaw(raw uint16, factor float64) float64 {
+	var signed int32
+
+	if raw > 0xEA38 {
+		signed = int32(raw) - 0xFFFF
+	} else {
+		signed = int32(raw)
+	}
+
+	return float64(signed) / factor
 }
