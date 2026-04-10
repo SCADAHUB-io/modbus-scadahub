@@ -73,27 +73,27 @@ type ModbusClient struct {
 
 // SKCStatus holds parsed fields from the SKC read status payload (command 0).
 type SKCStatus struct {
-	MotorAngles           []float64
-	INPositions           []float64
-	LENPositions          []float64
-	AxisAzimuth           float64
-	AxisTilt              float64
-	PitchA                uint16
-	PitchB                uint16
-	PVModule              uint16
-	WindAlarmThreshold    uint8
-	ParamA                uint16
-	ParamB                uint16
-	ParamC                uint16
-	WindSafePosition      float64
-	ExtendedAddress       uint16
-	NightPosition         float64
-	GammaLimit            float64
-	WindFinalHour         uint8
-	WindPreMax            uint8
-	WindSpeed             uint8
-	TrackStatus           []uint8
-	Alarms                uint8
+	MotorAngles        []float64
+	INPositions        []float64
+	LENPositions       []float64
+	AxisAzimuth        float64
+	AxisTilt           float64
+	PitchA             uint16
+	PitchB             uint16
+	PVModule           uint16
+	WindAlarmThreshold uint8
+	ParamA             uint16
+	ParamB             uint16
+	ParamC             uint16
+	WindSafePosition   float64
+	ExtendedAddress    uint16
+	NightPosition      float64
+	GammaLimit         float64
+	WindFinalHour      uint8
+	WindPreMax         uint8
+	WindSpeed          uint8
+	TrackStatus        []uint8
+	Alarms             uint8
 }
 
 // NewClient creates, configures and returns a modbus client object.
@@ -710,14 +710,38 @@ func (mc *ModbusClient) SKCAlarmReset(unitId uint8) (err error) {
 }
 
 // SKCGoToAngle sends a "go to angle" command (command=2) for all motors.
-// Angle is 0..556 for a specific motor, or 10 for all motors.
+// Angle is 0..556.
 func (mc *ModbusClient) SKCGoToAngle(unitId uint8, angle uint16) (err error) {
 	if angle > 556 {
-		return ErrUnexpectedParameters
+		return ErrIllegalDataValue
 	}
 
 	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x00, 0x02, angle)
 
+	return
+}
+
+// SKCSetWindAlarm sets the wind alarm (argument=1, command=2).
+// The accepted logical values are only 0 or 1, although value is typed as uint16 because the SKC request frame carries data as 16 bits.
+// This command will set the remote wind alarm and set to a safe position without expiring time.
+func (mc *ModbusClient) SKCSetWindAlarm(unitId uint8, value uint16) (err error) {
+	if value != 0 && value != 1 {
+		return ErrIllegalDataValue
+	}
+
+	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x1, 0x2, value)
+	return
+}
+
+// SKCClearWindAlarm clears the wind alarm (argument=2, command=2).
+// The accepted logical values are only 0 or 1, although value is typed as uint16 because the SKC request frame carries data as 16 bits.
+// This command will clear the remote wind alarm.
+func (mc *ModbusClient) SKCClearWindAlarm(unitId uint8, value uint16) (err error) {
+	if value != 0 && value != 1 {
+		return ErrIllegalDataValue
+	}
+
+	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x2, 0x2, value)
 	return
 }
 
@@ -757,47 +781,30 @@ func (mc *ModbusClient) SKCWriteParam(unitId uint8, param uint8, value uint16) (
 	return
 }
 
-// SKCGlobalIn sends the global IN command (command=10, subcommand=3, value=0x3DE).
+// SKCGlobalIn sends the global IN command (argument=10, command=3, value=0x3DE).
 // This command will globally set all motors to their IN position.
 // It is typically used to reset all motors to their home position after a power cycle or fault.
 func (mc *ModbusClient) SKCGlobalIn(unitId uint8) (err error) {
-	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0xA, 0x3, 0x3DE)
+	_, err = mc.SKCCommand(fcConvertSKC41, unitId, 0xA, 0x3, 0x3DE)
 	return
 }
 
-// SKCSetWindAlarm sets the wind alarm (command=1, subcommand=2, value=0).
-// This command will set the remote wind alarm and set to a safe position without expiring time.
-func (mc *ModbusClient) SKCSetWindAlarm(unitId uint8) (err error) {
-	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0x1, 0x2, 0x000)
+// SKCSetAuto sets the tracker to auto (value = 0) or manual (value = 1) mode (argument=0, command=6).
+// The accepted logical values are only 0 or 1, although value is typed as uint16 because the SKC request frame carries data as 16 bits.
+func (mc *ModbusClient) SKCSetAutoOrManual(unitId uint8, value uint16) (err error) {
+	if value != 0 && value != 1 {
+		return ErrIllegalDataValue
+	}
+
+	_, err = mc.SKCCommand(fcConvertSKC41, unitId, 0x0, 0x6, value)
 	return
 }
 
-// SKCClearWindAlarm clears the wind alarm (command=2, subcommand=2, value=0).
-// This command will clear the remote wind alarm.
-func (mc *ModbusClient) SKCClearWindAlarm(unitId uint8) (err error) {
-	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0x2, 0x2, 0x000)
-	return
-}
-
-// SKCSetAuto sets the tracker to auto mode (command=0, subcommand=6, value=0).
-// This command will set the tracker to auto mode.
-func (mc *ModbusClient) SKCSetAuto(unitId uint8) (err error) {
-	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0x0, 0x6, 0x000)
-	return
-}
-
-// SKCSetManual sets the tracker to manual mode (command=1, subcommand=6, value=0).
-// This command will set the tracker to manual mode.
-func (mc *ModbusClient) SKCSetManual(unitId uint8) (err error) {
-	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0x1, 0x6, 0x000)
-	return
-}
-
-// SKCGoToZero sends the global "go to zero" command (command=10, subcommand=3, value=0).
+// SKCGoToZero sends the global "go to zero" command (argument=10, command=3, value=0).
 // This command will globally set all motors to their zero position.
 // It is typically used to reset all motors to their zero position after a power cycle or fault.
 func (mc *ModbusClient) SKCGoToZero(unitId uint8) (err error) {
-	_, err = mc.SKCCommand(fcConvertSKCWrite, unitId, 0xA, 0x3, 0x000)
+	_, err = mc.SKCCommand(fcConvertSKC41, unitId, 0xA, 0x3, 0x000)
 	return
 }
 

@@ -40,8 +40,8 @@ const (
 	fcReadFileRecord  uint8 = 0x14
 	fcWriteFileRecord uint8 = 0x15
 	// vendor-specific
-	fcConvertSKC      uint8 = 0x64
-	fcConvertSKCWrite uint8 = 0x41
+	fcConvertSKC   uint8 = 0x64
+	fcConvertSKC41 uint8 = 0x41
 
 	// exception codes
 	exIllegalFunction         uint8 = 0x01
