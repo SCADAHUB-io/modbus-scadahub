@@ -796,7 +796,7 @@ func (mc *ModbusClient) SKCSetAutoOrManual(unitId uint8, value uint16) (err erro
 		return ErrIllegalDataValue
 	}
 
-	_, err = mc.SKCCommand(fcConvertSKC41, unitId, 0x0, 0x6, value)
+	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x0, 0x6, value)
 	return
 }
 
