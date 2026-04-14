@@ -789,14 +789,25 @@ func (mc *ModbusClient) SKCGlobalIn(unitId uint8) (err error) {
 	return
 }
 
-// SKCSetAuto sets the tracker to auto (value = 0) or manual (value = 1) mode (argument=0, command=6).
+// SKCSetAuto sets the tracker to auto mode (argument=0, command=6).
 // The accepted logical values are only 0 or 1, although value is typed as uint16 because the SKC request frame carries data as 16 bits.
-func (mc *ModbusClient) SKCSetAutoOrManual(unitId uint8, value uint16) (err error) {
+func (mc *ModbusClient) SKCSetAuto(unitId uint8, value uint16) (err error) {
 	if value != 0 && value != 1 {
 		return ErrIllegalDataValue
 	}
 
-	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x0, 0x6, value)
+	_, err = mc.SKCCommand(fcConvertSKC41, unitId, 0x0, 0x6, value)
+	return
+}
+
+// SKCSetManual sets the tracker to manual mode (argument=1, command=6).
+// The accepted logical values are only 0 or 1, although value is typed as uint16 because the SKC request frame carries data as 16 bits.
+func (mc *ModbusClient) SKCSetManual(unitId uint8, value uint16) (err error) {
+	if value != 0 && value != 1 {
+		return ErrIllegalDataValue
+	}
+
+	_, err = mc.SKCCommand(fcConvertSKC41, unitId, 0x1, 0x6, value)
 	return
 }
 
