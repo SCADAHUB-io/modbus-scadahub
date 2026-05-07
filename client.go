@@ -663,6 +663,12 @@ func (mc *ModbusClient) ReadSKC(unitId uint8) (status SKCStatus, err error) {
 		return
 	}
 
+	status = mc.ParseSKCPayload(payload)
+	return
+}
+
+// ParseSKCPayload parses the raw SKC status payload and returns structured values.
+func (mc *ModbusClient) ParseSKCPayload(payload []byte) (status SKCStatus) {
 	// Base status block (payload bytes 0..31).
 	fillSKCMotorAngles(payload, &status)
 	fillSKCWindSpeed(payload, &status)
