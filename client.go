@@ -735,7 +735,7 @@ func (mc *ModbusClient) SKCSetWindAlarm(unitId uint8, value uint16) (err error) 
 		return ErrIllegalDataValue
 	}
 
-	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x1, 0x2, value)
+	_, err = mc.SKCCommand(fcConvertSKC41, unitId, 0x1, 0x2, value)
 	return
 }
 
@@ -747,7 +747,7 @@ func (mc *ModbusClient) SKCClearWindAlarm(unitId uint8, value uint16) (err error
 		return ErrIllegalDataValue
 	}
 
-	_, err = mc.SKCCommand(fcConvertSKC, unitId, 0x2, 0x2, value)
+	_, err = mc.SKCCommand(fcConvertSKC41, unitId, 0x2, 0x2, value)
 	return
 }
 
